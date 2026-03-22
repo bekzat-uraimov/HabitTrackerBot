@@ -1,3 +1,16 @@
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import threading
+
+# Tiny server to keep Render happy
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200); self.end_headers(); self.wfile.write(b"Bot is alive!")
+
+def run_health_check():
+    HTTPServer(('0.0.0.0', 10000), HealthCheckHandler).serve_forever()
+
+threading.Thread(target=run_health_check, daemon=True).start()
+
 import os
 import time
 from dotenv import load_dotenv
