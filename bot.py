@@ -10,7 +10,7 @@ from telegram.ext import (
 )
 from app import PixelaUser, PixelaGraph, PixelaPixel
 
-# Tiny server for Render
+# Health check for Render
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200); self.end_headers(); self.wfile.write(b"Bot is alive!")
@@ -24,10 +24,7 @@ threading.Thread(target=run_health_check, daemon=True).start()
 
 load_dotenv()
 
-# States
 N1, C1, U1, N2, C2, U2, LOG_VAL = range(7)
-
-# Pre-defined Button Menus
 COLOR_KBD = ReplyKeyboardMarkup([['shibafu', 'momiji'], ['sora', 'ichigo']], one_time_keyboard=True)
 UNIT_KBD = ReplyKeyboardMarkup([['hours', 'km', 'count', '$']], one_time_keyboard=True)
 
@@ -59,7 +56,6 @@ async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if 'user' not in context.user_data: return await update.message.reply_text("⚠️ /login first")
-    # Auto-recovery logic
     if 'n1' not in context.user_data:
         graphs = context.user_data['user'].get_graphs()
         for i, g in enumerate(graphs[:2]):
@@ -85,7 +81,6 @@ async def log_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Error. Try /custom.")
     return ConversationHandler.END
 
-# --- CUSTOMIZATION WITH BUTTONS ---
 async def start_custom(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Habit 1 Name? (e.g. Coding)")
     return N1
@@ -124,7 +119,6 @@ async def finish_custom(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✨ Setup complete!", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
 
-# (Rest of the handlers: register, logout, view are identical to the previous version)
 async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     if len(args) < 2: return await update.message.reply_text("❌ /register user token")
@@ -140,9 +134,12 @@ async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Logged out.")
 
 async def view(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if 'user' not in context.user_data: return
-    u = context.user_data['user'].username
-    await update.message.reply_text(f"📊 Habit 1: https://pixe.la/v1/users/{u}/graphs/g1.html\nHabit 2: https://pixe.la/v1/users/{u}/graphs/g2.html")
+    if 'user' not in context.user_data: return await update.message.reply_text("⚠️ /login first")
+    user = context.user_data['user']
+    n1, n2 = context.user_data.get('n1', "Habit 1"), context.user_data.get('n2', "Habit 2")
+    kb = [[InlineKeyboardButton(f"📊 {n1} Graph", url=f"https://pixe.la/v1/users/{user.username}/graphs/g1.html")],
+          [InlineKeyboardButton(f"📊 {n2} Graph", url=f"https://pixe.la/v1/users/{user.username}/graphs/g2.html")]]
+    await update.message.reply_text("Tap below to see your progress:", reply_markup=InlineKeyboardMarkup(kb))
 
 if __name__ == '__main__':
     persistence = PicklePersistence(filepath='data.pickle')
