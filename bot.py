@@ -21,7 +21,8 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
 
 def run_health_check():
     try:
-        HTTPServer(('0.0.0.0', 10000), HealthCheckHandler).serve_forever()
+        server = HTTPServer(('0.0.0.0', 10000), HealthCheckHandler)
+        server.serve_forever()
     except Exception:
         pass
 
@@ -37,8 +38,9 @@ N1, C1, U1, N2, C2, U2, LOG_VAL = range(7)
 async def post_init(application):
     await application.bot.set_my_commands([
         BotCommand("start", "Main menu"),
+        BotCommand("register", "New account: /register user token"),
         BotCommand("login", "Login & Sync: /login user token"),
-        BotCommand("custom", "Setup/Change 2 habits"),
+        BotCommand("custom", "Setup 2 habits"),
         BotCommand("done", "Log a habit"),
         BotCommand("view", "See your graphs"),
         BotCommand("logout", "Switch account")
@@ -47,7 +49,21 @@ async def post_init(application):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🚀 **Habit Tracker Online**\nUse /login [user] [token] to sync your existing account.")
+        "🚀 **Habit Tracker Online**\n\nCommands:\n/register [user] [token] - Create new account\n/login [user] [token] - Sync existing account\n/done - Log your habits")
+
+
+async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args
+    if len(args) < 2:
+        return await update.message.reply_text("❌ Usage: /register username token")
+
+    user = PixelaUser(args[0], args[1])
+    res = user.create_user()
+    if res.get('isSuccess'):
+        context.user_data['user'] = user
+        await update.message.reply_text("✅ Account created! Now use /custom to set up your 2 habits.")
+    else:
+        await update.message.reply_text(f"❌ Error: {res.get('message')}")
 
 
 async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -58,24 +74,22 @@ async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = PixelaUser(args[0], args[1])
     graphs = user.get_graphs()
 
-    if not graphs and isinstance(graphs, list):
-        await update.message.reply_text("✅ Logged in, but no graphs found. Use /custom to create them!")
-    elif graphs:
+    if isinstance(graphs, list):
         context.user_data['user'] = user
-        # Auto-sync names from Pixela to prevent "Not Found" errors
+        # This part fixes the 'Not Found' error by mapping existing names
         for i, g in enumerate(graphs[:2]):
             context.user_data[f'n{i + 1}'] = g['name']
             context.user_data[f'u{i + 1}'] = g['unit']
         await update.message.reply_text(f"✅ Synced {len(graphs)} habits! Use /done to log.")
     else:
-        await update.message.reply_text("❌ Failed to sync. Check your username/token.")
+        await update.message.reply_text("❌ Failed to sync. Check your credentials.")
 
 
 async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if 'user' not in context.user_data:
-        return await update.message.reply_text("⚠️ Please /login first!")
+        return await update.message.reply_text("⚠️ Please /login or /register first!")
 
-    # Fallback sync if Render restarted and lost names
+    # Auto-recovery if Render cleared memory
     if 'n1' not in context.user_data:
         user = context.user_data['user']
         graphs = user.get_graphs()
@@ -86,8 +100,8 @@ async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     n1 = context.user_data.get('n1', "Habit 1")
     n2 = context.user_data.get('n2', "Habit 2")
 
-    kb = [[InlineKeyboardButton(n1, callback_query_handler=None, callback_data='g1')],
-          [InlineKeyboardButton(n2, callback_query_handler=None, callback_data='g2')]]
+    kb = [[InlineKeyboardButton(n1, callback_data='g1')],
+          [InlineKeyboardButton(n2, callback_data='g2')]]
     await update.message.reply_text("Which habit did you finish?", reply_markup=InlineKeyboardMarkup(kb))
 
 
@@ -109,11 +123,11 @@ async def log_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if pixel.update(val):
         await update.message.reply_text(f"✅ Success! Logged {val} to {gid}.")
     else:
-        await update.message.reply_text("❌ Error: Graph not found on Pixela. Try /custom.")
+        await update.message.reply_text("❌ Error: Graph not found. Try running /custom.")
     return ConversationHandler.END
 
 
-# --- Conversation logic for /custom remains mostly the same but ensure graph_id is g1/g2 ---
+# --- Customization logic ---
 async def start_custom(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if 'user' not in context.user_data:
         return await update.message.reply_text("Please /login first.")
@@ -156,11 +170,11 @@ async def finish_custom(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = context.user_data['user']
     g = PixelaGraph(user)
 
-    # Create both
+    # Create/Update g1 and g2
     g.create("g1", context.user_data['n1'], context.user_data['c1'], context.user_data['u1'])
     g.create("g2", context.user_data['n2'], context.user_data['c2'], context.user_data['u2'])
 
-    await update.message.reply_text("✨ Both habits configured! Try /done now.")
+    await update.message.reply_text("✨ Habits configured! Use /done to log.")
     return ConversationHandler.END
 
 
@@ -173,7 +187,7 @@ async def view(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if 'user' not in context.user_data: return
     user = context.user_data['user']
     await update.message.reply_text(
-        f"Check your graphs here:\nHabit 1: https://pixe.la/v1/users/{user.username}/graphs/g1.html\nHabit 2: https://pixe.la/v1/users/{user.username}/graphs/g2.html")
+        f"📊 Graphs:\nHabit 1: https://pixe.la/v1/users/{user.username}/graphs/g1.html\nHabit 2: https://pixe.la/v1/users/{user.username}/graphs/g2.html")
 
 
 if __name__ == '__main__':
@@ -196,6 +210,7 @@ if __name__ == '__main__':
     )
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("register", register))
     app.add_handler(CommandHandler("login", login))
     app.add_handler(CommandHandler("logout", logout))
     app.add_handler(CommandHandler("done", done))
