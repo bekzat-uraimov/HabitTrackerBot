@@ -11,9 +11,25 @@ from telegram.ext import (
 from app import PixelaUser, PixelaGraph, PixelaPixel
 
 # Health check for Render
+# Tiny server to keep Render happy
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        self.send_response(200); self.end_headers(); self.wfile.write(b"Bot is alive!")
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is alive!")
+
+    def do_HEAD(self):
+        """Отвечает на HEAD запросы от UptimeRobot"""
+        self.send_response(200)
+        self.end_headers()
+
+def run_health_check():
+    # Используем порт 10000, который ожидает Render
+    try:
+        server = HTTPServer(('0.0.0.0', 10000), HealthCheckHandler)
+        server.serve_forever()
+    except Exception as e:
+        print(f"Server error: {e}")
 
 def run_health_check():
     try:
